@@ -2,16 +2,17 @@ package main
 
 import (
 	"fmt"
+	"math/big"
 	"os/exec"
 
 	"github.com/fogleman/gg"
 )
 
 type State struct {
-	minX float64
-	maxX float64
-	minY float64
-	maxY float64
+	minX big.Float
+	maxX big.Float
+	minY big.Float
+	maxY big.Float
 	w    int
 	h    int
 }
@@ -26,27 +27,66 @@ func getPts(state State, maxIteration int) [][]int {
 	maxx := state.maxX
 	miny := state.minY
 	maxy := state.maxY
-	// fmt.Println(xpts, ypts, minx, miny, maxx, maxy)
+	xdif := sub(&maxx, &minx)
+	ydif := sub(&maxy, &miny)
+
+	var bxp big.Float
+	bxp.SetInt(big.NewInt(int64(xpts)))
+
+	var byp big.Float
+	byp.SetInt(big.NewInt(int64(ypts)))
+
 	for i := 0; i < xpts; i++ {
 
+		var bi big.Float
+		bi.SetInt(big.NewInt(int64(i)))
 		row := make([]int, 0)
 		for j := 0; j < ypts; j++ {
-			x0 := (maxx-minx)*float64(i)/float64(xpts) + minx
-			y0 := (maxy-miny)*float64(j)/float64(ypts) + miny
 
-			x := float64(0)
-			xtemp := float64(0)
-			y := float64(0)
-			// fmt.Println(x0, y0, x, xtemp, y)
+			var bj big.Float
+			bj.SetInt(big.NewInt(int64(j)))
+			xmul := mul(&xdif, &bi)
+			ymul := mul(&ydif, &bj)
+
+			xquo := quo(&xmul, &bxp)
+			yquo := quo(&ymul, &byp)
+
+			x0 := add(&xquo, &minx)
+			y0 := add(&yquo, &miny)
+
+			x := big.NewFloat(0.0)
+			y := big.NewFloat(0.0)
+
 			iteration := 0
 
-			for ; ((x*x)+(y*y) < 4) && (iteration < maxIteration); iteration++ {
-				xtemp = x*x - y*y + x0
-				y = 2*x*y + y0
-				x = xtemp
+			x2 := mul(x, x)
+			y2 := mul(y, y)
+			sum := add(&x2, &y2)
+
+			for ; lt4(&sum) && (iteration < maxIteration); iteration++ {
+
+				x2 = mul(x, x)
+				y2 = mul(y, y)
+
+				diff := sub(&x2, &y2)
+				xtemp := add(&diff, &x0)
+
+				twox := mul(big.NewFloat(2.0), x)
+				twoxy := mul(&twox, y)
+
+				ysum := add(&twoxy, &y0)
+
+				y = &ysum
+				x = &xtemp
+
+				x2 = mul(x, x)
+				y2 = mul(y, y)
+
+				sum = add(&x2, &y2)
 			}
 
-			if x*x+y*y < 4 {
+			sum = add(&x2, &y2)
+			if lt4(&sum) {
 				iteration = 0
 			}
 
@@ -101,20 +141,14 @@ func hsl2rgb(h, s, l float64) (r, g, b float64) {
 }
 
 func doMandelbrot(state State, ctx *gg.Context, frame int) {
-	maxIteration := 1000
+	maxIteration := 500
 
 	pts := getPts(state, maxIteration)
 
 	for i := 0; i < state.w; i++ {
 		for j := 0; j < state.h; j++ {
 			iteration := pts[i][j]
-			var l float64
-			l = 0.5
-			// if iteration < 20 {
-			// 	l = float64(iteration)
-			// } else {
-			// 	l = 50
-			// }
+			l := 0.5
 
 			h := float64(iteration) / float64(maxIteration)
 			if iteration < 20 {
@@ -132,31 +166,85 @@ func doMandelbrot(state State, ctx *gg.Context, frame int) {
 	ctx.SavePNG(fn)
 }
 
-func zoomAt(centerX, centerY float64, state State, zoomFactor float64) State {
+func scale(max, min big.Float, zoomFactor float64) *big.Float {
+	z := big.NewFloat(0.5 * zoomFactor)
+	diff := sub(&max, &min)
+	res := mul(z, &diff)
+	return &res
+}
+
+func zoomAt(centerX, centerY big.Float, state State, zoomFactor float64) State {
+
+	xsub := sub(&centerX, scale(state.maxX, state.minX, zoomFactor))
+	xadd := add(&centerX, scale(state.maxX, state.minX, zoomFactor))
+
+	ysub := sub(&centerY, scale(state.maxY, state.minY, zoomFactor))
+	yadd := add(&centerY, scale(state.maxY, state.minY, zoomFactor))
+
 	return State{
 
-		centerX - zoomFactor*(state.maxX-state.minX)/2,
-		centerX + zoomFactor*(state.maxX-state.minX)/2,
+		xsub,
+		xadd,
 
-		centerY - zoomFactor*(state.maxY-state.minY)/2,
-		centerY + zoomFactor*(state.maxY-state.minY)/2,
+		ysub,
+		yadd,
+
 		state.w,
 		state.h}
 }
 
+func quo(a, b *big.Float) big.Float {
+	var d big.Float
+	d = *(d.Quo(a, b))
+	return d
+}
+
+func mul(a, b *big.Float) big.Float {
+	var d big.Float
+	d = *(d.Mul(a, b))
+	return d
+}
+
+func add(a, b *big.Float) big.Float {
+	var d big.Float
+	d = *(d.Add(a, b))
+	return d
+}
+
+func sub(a, b *big.Float) big.Float {
+	var d big.Float
+	d = *(d.Sub(a, b))
+	return d
+}
+
+func lt4(a *big.Float) bool {
+	four := big.NewFloat(4.0)
+	return lt(a, four)
+}
+
+func lt(a, b *big.Float) bool {
+	return (a.Cmp(b) == -1)
+}
+
 func main() {
 	exec.Command("rm data/*.png")
-	state := State{-2.5, 1, -1, 1, 640, 480}
-	frames := 1000
-	desiredCenterX := -1.235883546447
-	desiredCenterY := -0.1091632575204
-	fmt.Println(desiredCenterX, desiredCenterY)
+	state := State{
+		*big.NewFloat(-2.5),
+		*big.NewFloat(1),
+		*big.NewFloat(-1),
+		*big.NewFloat(1),
+		640,
+		480}
+
+	frames := 10
+	desiredCenterX := big.NewFloat(-1.235883546447)
+	desiredCenterY := big.NewFloat(-0.1091632575204)
 	for frame := 0; frame < frames; frame++ {
 		fmt.Println(frame, state)
 		ctx := gg.NewContext(state.w, state.h)
-		if frame > 570 {
-			doMandelbrot(state, ctx, frame)
-		}
-		state = zoomAt(desiredCenterX, desiredCenterY, state, 0.95)
+
+		doMandelbrot(state, ctx, frame)
+
+		state = zoomAt(*desiredCenterX, *desiredCenterY, state, 0.95)
 	}
 }
