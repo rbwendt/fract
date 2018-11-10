@@ -3,97 +3,33 @@ package state
 import (
 	"fmt"
 	"math/big"
+	"os"
 	"os/exec"
 	"time"
 
 	"github.com/fogleman/gg"
 )
 
-func getPts(state State, maxIteration int) [][]int {
-
-	pts := make([][]int, 0)
-
-	xpts := state.w
-	ypts := state.h
-	minx := state.minX
-	maxx := state.maxX
-	miny := state.minY
-	maxy := state.maxY
-	xdif := sub(&maxx, &minx)
-	ydif := sub(&maxy, &miny)
-
-	var bxp big.Float
-	bxp.SetInt(big.NewInt(int64(xpts)))
-
-	var byp big.Float
-	byp.SetInt(big.NewInt(int64(ypts)))
-
-	for i := 0; i < xpts; i++ {
-
-		var bi big.Float
-		bi.SetInt(big.NewInt(int64(i)))
-		row := make([]int, 0)
-		for j := 0; j < ypts; j++ {
-
-			var bj big.Float
-			bj.SetInt(big.NewInt(int64(j)))
-			xmul := mul(&xdif, &bi)
-			ymul := mul(&ydif, &bj)
-
-			xquo := quo(&xmul, &bxp)
-			yquo := quo(&ymul, &byp)
-
-			x0 := add(&xquo, &minx)
-			y0 := add(&yquo, &miny)
-
-			x := big.NewFloat(0.0)
-			y := big.NewFloat(0.0)
-
-			iteration := 0
-
-			x2 := mul(x, x)
-			y2 := mul(y, y)
-			sum := add(&x2, &y2)
-
-			for ; lt4(&sum) && (iteration < maxIteration); iteration++ {
-
-				x2 = mul(x, x)
-				y2 = mul(y, y)
-
-				diff := sub(&x2, &y2)
-				xtemp := add(&diff, &x0)
-
-				twox := mul(big.NewFloat(2.0), x)
-				twoxy := mul(&twox, y)
-
-				ysum := add(&twoxy, &y0)
-
-				y = &ysum
-				x = &xtemp
-
-				x2 = mul(x, x)
-				y2 = mul(y, y)
-
-				sum = add(&x2, &y2)
-			}
-
-			sum = add(&x2, &y2)
-			if lt4(&sum) {
-				iteration = 0
-			}
-
-			row = append(row, iteration)
-		}
-		pts = append(pts, row)
-
-	}
-	return pts
-}
-
 func doMandelbrot(state State, ctx *gg.Context, frame int) {
-	maxIteration := 2000
 
-	pts := getPts(state, maxIteration)
+	fn := fmt.Sprintf("data/out-%04d.png", frame)
+
+	if _, err := os.Stat(fn); !os.IsNotExist(err) {
+		fmt.Println("file", fn, "exists, skipping")
+		return
+	}
+
+	maxIteration := frame + 200
+	if maxIteration < 500 {
+		maxIteration = 500
+	}
+
+	prec := int(float64(frame)/10.0) + 21
+	if prec < 63 {
+		prec = 63
+	}
+
+	pts := getPts(state, maxIteration, prec)
 
 	for i := 0; i < state.w; i++ {
 		for j := 0; j < state.h; j++ {
@@ -113,7 +49,6 @@ func doMandelbrot(state State, ctx *gg.Context, frame int) {
 		}
 	}
 
-	fn := fmt.Sprintf("data/out-%04d.png", frame)
 	ctx.SavePNG(fn)
 }
 
@@ -125,10 +60,10 @@ func Go() {
 		*big.NewFloat(1),
 		*big.NewFloat(-1),
 		*big.NewFloat(1),
-		640,
-		480}
+		1920,
+		1080}
 
-	frames := 10000
+	frames := 1805
 	// yc := "-0.10935"
 
 	// desiredCenterX, _, _ := big.ParseFloat(xc, base, prec, big.ToNearestEven)
@@ -145,17 +80,24 @@ func Go() {
 	// I have to set up parsing for these longer inputs.
 
 	for frame := 0; frame < frames; frame++ {
-		ctx := gg.NewContext(state.w, state.h)
-		if frame > 1800 {
-			fmt.Println(frame, &state.minX, &state.maxX, &state.minY, &state.maxY)
 
-			start := time.Now()
-			doMandelbrot(state, ctx, frame)
-			elapsed := time.Since(start)
-			fmt.Println("frame took", elapsed)
-			break
+		// fmt.Println(frame, &state.minX, &state.maxX, &state.minY, &state.maxY)
+
+		f := func(frame int, state State) {
+			if frame > 614 {
+				// fmt.Println("computing frame", frame)
+				ctx := gg.NewContext(state.w, state.h)
+				start := time.Now()
+				doMandelbrot(state, ctx, frame)
+				elapsed := time.Since(start)
+				fmt.Println("frame", frame, "took", elapsed)
+			}
 		}
-
+		if frame%4 == 0 {
+			f(frame, state)
+		} else {
+			go f(frame, state)
+		}
 		state = zoomAt(desiredCenterX, desiredCenterY, state, 0.95)
 	}
 }
