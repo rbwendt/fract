@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os/exec"
+	"time"
 
 	"github.com/fogleman/gg"
 )
@@ -154,9 +155,12 @@ func main() {
 	for frame := 0; frame < frames; frame++ {
 		fmt.Println(frame, state)
 		ctx := gg.NewContext(state.w, state.h)
+		start := time.Now()
 		if frame > 570 {
 			doMandelbrot(state, ctx, frame)
 		}
+		elapsed := time.Since(start)
+		fmt.Println("frame", frame, "took", elapsed)
 		state = zoomAt(desiredCenterX, desiredCenterY, state, 0.95)
 	}
 }
